@@ -9,6 +9,7 @@
     body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0b0b0b;color:#fff;font:16px system-ui}
     .card{width:min(680px,92vw);padding:28px;border-radius:16px;border:1px solid #c8a97e44;background:rgba(255,255,255,.06);backdrop-filter:blur(12px);text-align:center}
     button{padding:14px 22px;border:0;border-radius:12px;font-weight:700;cursor:pointer;background:linear-gradient(180deg,#D9B77F,#C8A97E);color:#111}
+    button[disabled]{opacity:.6;cursor:wait}
     .hint{opacity:.75;margin-top:10px}
     a{color:#cbd}
   </style>
@@ -24,25 +25,58 @@
 
   <script>
     const AGENT_ID = 'agent_2ef0bb4ea2ed7e53220f46df3c';
+
+    // "Zurück"-Link
     const p = new URL(location.href).searchParams;
     document.getElementById('back').href = p.get('returnTo') || 'https://carina-cosmetic.de';
 
-    document.getElementById('voiceBtn').addEventListener('click', async () => {
-      try {
-        const r = await fetch('/api/token', {
-          method: 'POST',
-          headers: {'Content-Type':'application/json'},
-          body: JSON.stringify({ agentId: AGENT_ID })
-        });
-        const { token } = await r.json();
-        if (!token) throw new Error('Kein Token erhalten');
+    // Hilfsfunktion: fetch mit sauberer Fehleranzeige
+    async function postJSON(url, data) {
+      const r = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data || {})
+      });
+      let payload = null;
+      try { payload = await r.json(); } catch(e) {}
+      if (!r.ok) {
+        const msg = (payload && (payload.error || JSON.stringify(payload))) || `HTTP ${r.status}`;
+        throw new Error(msg);
+      }
+      return payload;
+    }
 
-        if (!(window.retell && window.retell.createClient)) throw new Error('Web-SDK nicht geladen');
+    const btn = document.getElementById('voiceBtn');
+
+    btn.addEventListener('click', async () => {
+      try {
+        btn.disabled = true;
+        btn.textContent = '🔄 Starte …';
+
+        // 1) Token vom Backend holen – WICHTIG: agentId exakt so senden
+        const { token } = await postJSON('/api/token', { agentId: AGENT_ID });
+        if (!token) throw new Error('Token leer');
+
+        // 2) SDK prüfen & Call starten
+        if (!(window.retell && typeof window.retell.createClient === 'function')) {
+          throw new Error('Web-SDK nicht geladen');
+        }
         const client = window.retell.createClient({});
-        await client.start({ agentId: AGENT_ID, clientSecret: token, accessToken: token });
+
+        // v1/v2 kompatibel – eines der beiden Felder greift
+        await client.start({
+          agentId: AGENT_ID,
+          clientSecret: token,
+          accessToken: token
+        });
+
+        btn.textContent = '🔊 Verbunden';
       } catch (e) {
-        console.error(e);
-        alert('Web Voice konnte nicht starten. Prüfe API-Key, Agent-ID und Mikro-Freigabe.');
+        console.error('[Voice]', e);
+        alert('Web Voice konnte nicht starten:\n' + (e && e.message ? e.message : e));
+        btn.textContent = '🎤 Jetzt sprechen';
+      } finally {
+        btn.disabled = false;
       }
     });
   </script>
